@@ -99,7 +99,7 @@ _GETCAMERAPICTURE_REQ  = _BASE_URL + "api/getcamerapicture"
 _GETEVENTSUNTIL_REQ    = _BASE_URL + "api/geteventsuntil"
 _GETHOMESDATA_REQ      = _BASE_URL + "api/homesdata"
 _GETHOMESTATUS_REQ     = _BASE_URL + "api/homestatus"
-
+_GETROOMMEASURE_REQ    = _BASE_URL + "api/getroommeasure"
 
 #TODO# Undocumented (but would be very usefull) API : Access currently forbidden (403)
 
@@ -152,6 +152,26 @@ UNITS = {
     }
 }
 
+# Room Measasures types
+TYPE_TEMPERATURE = 'temperature'
+TYPE_SETPOINT_TEMPARATURE = 'sp_temperature'
+TYPE_MIN_TEMP = 'min_temp'
+TYPE_MAX_TEMP = 'max_temp'
+TYPE_HEATING_POWER = 'heating_power_request' # Undocumented
+## date_min_temp & date_max_temp are only available for large scales ({1day, 1week, 1month}).
+TYPE_DATE_MIN_TEMP = 'date_max_temp'
+TYPE_DATE_MAX_TEMP = 'date_max_temp'
+
+# Room Measures scale (Timeframe between two measurements)
+SCALE_10MIN = 'max' # Undocummented
+SCALE_30MIN = '30min'
+SCALE_1HOUR = '1hour'
+SCALE_3HOURS = '3hours'
+SCALE_1DAY = '1day'
+SCALE_1WEEK = '1week'
+SCALE_1MONTH = '1month'
+
+
 # Logger context
 logger = logging.getLogger("lnetatmo")
 
@@ -159,14 +179,14 @@ logger = logging.getLogger("lnetatmo")
 class NoDevice( Exception ):
     pass
 
-
 class NoHome( Exception ):
     pass
-
 
 class NoHomes( Exception ):
     pass
 
+class NoRoom( Exception ):
+    pass
 
 class AuthFailure( Exception ):
     pass
@@ -345,6 +365,52 @@ class EnergyHomeStatus:
 
     def getRooms(self):
         return self.rooms
+
+class EnergyRoomMeasurement:
+    def __init__(self,
+                 authData,
+                 home,
+                 room,
+                 date_begin,
+                 date_end,
+                 scale=SCALE_10MIN,
+                 type=[TYPE_TEMPERATURE, TYPE_SETPOINT_TEMPARATURE, TYPE_HEATING_POWER],
+                 optimize=False,
+                 real_time=True,
+                 limit=100):
+        self.getAuthToken = authData.accessToken
+        if not home: raise NoHome("No home provided")
+        if not room: raise NoRoom("No room provided")
+        postParams = {
+                "access_token" : self.getAuthToken,
+                "home_id": home['id'],
+                "room_id": room['id'],
+                "scale": scale,
+                "type": ','.join(type),
+                "date_begin": date_begin,
+                "date_end": date_end,
+                "limit": limit,
+                "optimize": optimize,
+                "real_time": real_time
+                }
+        resp = postRequest(_GETROOMMEASURE_REQ, postParams)
+
+        self.rawData = resp['body']
+        if not self.rawData : raise NoRoom("No room data available")
+
+        self.measurements = []
+        for timestamp, measurement in self.rawData.items():
+            singleMeasurement = dict()
+            singleMeasurement['timestamp'] = timestamp
+            for index, singleType in enumerate(type):
+                singleMeasurement[singleType] = measurement[index]
+            self.measurements.append(singleMeasurement)
+
+    def getMeasruements(self):
+        return self.measurements
+
+    def getLatestMeasurement(self):
+        return self.measurements[-1]
 
 class WeatherStationData:
     """
