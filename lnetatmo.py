@@ -87,7 +87,9 @@ _GETTHERMOSTATDATA_REQ = _BASE_URL + "api/getthermostatsdata"
 _GETHOMEDATA_REQ       = _BASE_URL + "api/gethomedata"
 _GETCAMERAPICTURE_REQ  = _BASE_URL + "api/getcamerapicture"
 _GETEVENTSUNTIL_REQ    = _BASE_URL + "api/geteventsuntil"
-
+_GETHOMESDATA_REQ      = _BASE_URL + "api/homesdata"
+_GETHOMESTATUS_REQ     = _BASE_URL + "api/homestatus"
+_GETROOMMEASURE_REQ    = _BASE_URL + "api/getroommeasure"
 
 #TODO# Undocumented (but would be very usefull) API : Access currently forbidden (403)
 
@@ -140,6 +142,26 @@ UNITS = {
     }
 }
 
+# Room Measasures types
+TYPE_TEMPERATURE = 'temperature'
+TYPE_SETPOINT_TEMPARATURE = 'sp_temperature'
+TYPE_MIN_TEMP = 'min_temp'
+TYPE_MAX_TEMP = 'max_temp'
+TYPE_HEATING_POWER = 'heating_power_request' # Undocumented
+## date_min_temp & date_max_temp are only available for large scales ({1day, 1week, 1month}).
+TYPE_DATE_MIN_TEMP = 'date_max_temp'
+TYPE_DATE_MAX_TEMP = 'date_max_temp'
+
+# Room Measures scale (Timeframe between two measurements)
+SCALE_10MIN = 'max' # Undocummented
+SCALE_30MIN = '30min'
+SCALE_1HOUR = '1hour'
+SCALE_3HOURS = '3hours'
+SCALE_1DAY = '1day'
+SCALE_1WEEK = '1week'
+SCALE_1MONTH = '1month'
+
+
 # Logger context
 logger = logging.getLogger("lnetatmo")
 
@@ -147,10 +169,14 @@ logger = logging.getLogger("lnetatmo")
 class NoDevice( Exception ):
     pass
 
-
 class NoHome( Exception ):
     pass
 
+class NoHomes( Exception ):
+    pass
+
+class NoRoom( Exception ):
+    pass
 
 class AuthFailure( Exception ):
     pass
@@ -235,18 +261,12 @@ class ThermostatData:
         home : Home name or id of the home who's thermostat belongs to
     """
     def __init__(self, authData, home=None):
-
-        # I don't own a thermostat thus I am not able to test the Thermostat support
-        warnings.warn("The Thermostat code is not tested due to the lack of test environment.\n" \
-                      "As Netatmo is continuously breaking API compatibility, risk that current bindings are wrong is high.\n" \
-                      "Please report found issues (https://github.com/philippelt/netatmo-api-python/issues)",
-                       RuntimeWarning )
-
         self.getAuthToken = authData.accessToken
         postParams = {
                 "access_token" : self.getAuthToken
                 }
-        resp = postRequest("Thermostat", _GETTHERMOSTATDATA_REQ, postParams)
+        resp = postRequest("Thermostat", _GETHOMESTATUS_REQ, postParams)
+
         self.rawData = resp['body']['devices']
         if not self.rawData : raise NoDevice("No thermostat available")
         self.thermostatData = filter_home_data(self.rawData, home)
@@ -258,7 +278,21 @@ class ThermostatData:
         self.defaultThermostatId = self.thermostatData['_id']
         self.defaultModule = self.thermostatData['modules'][0]
 
-    def getThermostat(self, name=None):
+        self.rawData = resp['body']['homes']
+        if not self.rawData : raise NoHomes("No homes available")
+        self.homes = {}
+        self.defaultHomeId = self.rawData[0]['id']
+        for home in self.rawData:
+            self.homes[home['id']] = home
+
+    def getHome(self, name=None):
+        def getThermostats(self):
+            return self['']
+
+        if ['name'] != name: return self.homes[self.defaultHomeId]
+        else: self.homes[name]
+
+    def getThermostat(self, name=None, homeId=None):
         if ['name'] != name: return None
         else: return 
         return self.thermostat[self.defaultThermostatId]
@@ -273,6 +307,141 @@ class ThermostatData:
             if m['name'] == name: return m
         return None
 
+
+class EnergyHomesData:
+    """
+    List the Thermostat and temperature modules
+
+    Args:
+        authData (clientAuth): Authentication information with a working access Token
+        home : Home name or id of the home who's thermostat belongs to
+    """
+    def __init__(self, authData, home=None):
+        self.getAuthToken = authData.accessToken
+        postParams = {
+                "access_token" : self.getAuthToken
+                }
+        resp = postRequest("Home data", _GETHOMESDATA_REQ, postParams)
+
+        self.rawData = resp['body']['homes']
+        if not self.rawData : raise NoHomes("No homes available")
+        self.homes = {}
+        self.defaultHomeId = self.rawData[0]['id']
+        for home in self.rawData:
+            self.homes[home['id']] = home
+
+    def getHome(self, name=None):
+        def getThermostats(self):
+            return self['']
+
+        if ['name'] != name: return self.homes[self.defaultHomeId]
+        else: self.homes[name]
+
+    def getThermostat(self, name=None, homeId=None):
+        if ['name'] != name: return None
+        else: return 
+        return self.thermostat[self.defaultThermostatId]
+
+    def moduleNamesList(self, name=None, tid=None):
+        thermostat = self.getThermostat(name=name, tid=tid)
+        return [m['name'] for m in thermostat['modules']] if thermostat else None
+
+    def getModuleByName(self, name, thermostatId=None):
+        thermostat = self.getThermostat(tid=thermostatId)
+        for m in thermostat['modules']:
+            if m['name'] == name: return m
+        return None
+
+class EnergyHomeStatus:
+    def __init__(self, authData, home):
+        self.getAuthToken = authData.accessToken
+        if not home: raise NoHome("No home provided")
+        postParams = {
+                "access_token" : self.getAuthToken,
+                "home_id": home['id']
+                }
+        resp = postRequest("Home data", _GETHOMESTATUS_REQ, postParams)
+
+        self.rawData = resp['body']['home']
+        if not self.rawData : raise NoHome("No home available")
+
+        self.rooms = dict()
+        self.rawRooms = dict()
+        self.modules = dict()
+
+        for module in self.rawData['modules']:
+            self.modules[module['id']] = module
+
+        for room in self.rawData['rooms']:
+            self.rawRooms[room['id']] = room
+
+        for room in home['rooms']:
+            singleRoom = room
+
+            singleRoom['modules'] = dict()
+            for moduleId in room['module_ids']:
+                rawModule = []
+                for homeModule in home['modules']:
+                    if homeModule['id'] == moduleId: rawModule = homeModule
+
+                singleRoom['modules'][moduleId] = self.modules[moduleId] | rawModule
+
+            if room['id'] not in self.rawRooms: rawRoom = dict()
+            else: rawRoom = self.rawRooms[room['id']]
+
+            self.rooms[room['id']] = singleRoom | rawRoom
+
+    def getModules(self):
+        return self.modules
+
+    def getRooms(self):
+        return self.rooms
+
+class EnergyRoomMeasurement:
+    def __init__(self,
+                 authData,
+                 home,
+                 room,
+                 date_begin,
+                 date_end,
+                 scale=SCALE_10MIN,
+                 type=[TYPE_TEMPERATURE, TYPE_SETPOINT_TEMPARATURE, TYPE_HEATING_POWER],
+                 optimize=False,
+                 real_time=True,
+                 limit=100):
+        self.getAuthToken = authData.accessToken
+        if not home: raise NoHome("No home provided")
+        if not room: raise NoRoom("No room provided")
+        postParams = {
+                "access_token" : self.getAuthToken,
+                "home_id": home['id'],
+                "room_id": room['id'],
+                "scale": scale,
+                "type": ','.join(type),
+                "date_begin": date_begin,
+                "date_end": date_end,
+                "limit": limit,
+                "optimize": optimize,
+                "real_time": real_time
+                }
+        resp = postRequest("Home data", _GETROOMMEASURE_REQ, postParams)
+
+        self.rawData = resp['body']
+        if not self.rawData : raise NoRoom("No room data available")
+
+        self.measurements = []
+        for timestamp, measurement in self.rawData.items():
+            singleMeasurement = dict()
+            singleMeasurement['timestamp'] = timestamp
+            for index, singleType in enumerate(type):
+                singleMeasurement[singleType] = measurement[index]
+            self.measurements.append(singleMeasurement)
+
+    def getMeasruements(self):
+        return self.measurements
+
+    def getLatestMeasurement(self):
+        return self.measurements[-1]
 
 class WeatherStationData:
     """
