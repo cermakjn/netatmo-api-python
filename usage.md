@@ -15,6 +15,10 @@ Python Netatmo API programmers guide
 
 >2023-07-12, Breaking changes due to deprecation of grant_type "password" for ALL apps
 
+>2023-07-24, Adding rawAPI call to direct access the netatmo API when no additional support is provided by the library
+
+>2023-12-04, New update to Netatmo authentication rules, no longer long lived refresh token -> credentials MUST be writable, Hard coding credentials in the library no longer possible (bad luck for small home automation device)
+
 No additional library other than standard Python library is required.
 
 Both Python V2.7x and V3.x.x are supported without change.
@@ -36,8 +40,6 @@ Before being able to use the module you will need :
   * An application registered from the user account (see http://dev.netatmo.com/dev/createapp) to obtain application credentials.
   * Create a couple access_token/refresh_token at the same time with your required scope (depending of your intents on library use)
 
-In the netatmo philosophy, both the application itself and the user have to be registered thus have authentication credentials to be able to access any station. Registration is free for both.
-
 
 
 ### 2 Setup your authentication information ###
@@ -46,10 +48,9 @@ In the netatmo philosophy, both the application itself and the user have to be r
 
 Copy the lnetatmo.py file in your work directory (or use pip install lnetatmo).
 
-Authentication data can be supplied with 4 different methods (each method override any settings of previous methods) : 
+Authentication data can be supplied with 3 different methods (each method override any settings of previous methods) : 
 
- 1. Some or all values can be hard coded in the library source (and default to empty strings). If you use this method, you are back to the initial suggested method. It would be nice to switch to other methods to isolate credentials and ease library upgrades.
- 2. Some or all values can be overriden in a ~/.netatmo.credentials (in your platform home directory) file containing the keys in JSON format  
+ 1. Some or all values can stored in ~/.netatmo.credentials (in your platform home directory) file containing the keys in JSON format  
  
         $ cat .netatmo.credentials   # Here all values are defined but it is not mandatory
         {
@@ -59,19 +60,21 @@ Authentication data can be supplied with 4 different methods (each method overri
         }
         $
 
- 3. Some or all values can be overriden by environment variables. This is the easiest method if your are packaging your application with Docker. It also allow you to do some testing with other accounts without touching your current ~/.netatmo.credentials file 
+> Due to Netatmo continuous changes, this method is the only one available for production use as the refresh token will be frequently refreshed and this file MUST be writable by the library to keep a usable refresh token.
+
+ 2. Some or all values can be overriden by environment variables. This is the easiest method if your are packaging your application with Docker. It also allow you to do some testing with other accounts without touching your current ~/.netatmo.credentials file 
  
         $ export REFRESH_TOKEN="yyy"
         $ python3 MyCodeUsingLnetatmo.py
         ...
         
- 4. Some or all values can be overriden by explicit call to initializer of ClientAuth class  
+ 3. Some or all values can be overriden by explicit call to initializer of ClientAuth class  
  
         # Example: REFRESH_TOKEN supposed to be defined by one of the previous methods
         authData = lnetatmo.ClientAuth( clientId="netatmo-client-id",
                                         clientSecret="secret" )
 
-If you provide all the values, using any method or mix except 4, you can test that everything is working properly by simply running the package as a standalone program.
+If you provide all the values, using any method or mix except 3, you can test that everything is working properly by simply running the package as a standalone program.
 
 This will run a full access test to the account and stations and return 0 as return code if everything works well. If run interactively, it will also display an OK message.
 
@@ -250,6 +253,10 @@ Properties, all properties are read-only unless specified:
 Methods :
 
 
+  * **getStation** (station=None) : Find a station by it's station name or station ID
+    * Input : Station name or ID to lookup (str)
+    * Output : station dictionary or None
+
   * **stationByName** (station=None) : Find a station by it's station name
     * Input : Station name to lookup (str)
     * Output : station dictionary or None
@@ -422,17 +429,58 @@ Methods :
   * **getLiveSnapshot** (camera=None, home=None, cid=None) : Get a jpeg of current live view of the camera
     * Input : camera name and optional home name or cameraID to lookup (str)
     * Output : jpeg binary content
+  
+
+#### 4-6 HomeStatus class ####
 
 
-#### 4-5 Utilities functions ####
+Constructor
+
+```python
+    homeStatus = lnetatmo.HomeStatus( authorization, home_id )
+```
+
+Requires : 
+- an authorization object (ClientAuth instance)
+- home_id which can be found in https://dev.netatmo.com/apidocumentation/control by using "GET homesdata"
+
+Return : a homeStatus object. This object contains most administration properties of Home+ Control devices such as Smarther thermostat, Socket, Cable Output, Centralized fan, Micromodules, ...
+
+Methods :
+
+  * **getRoomsId** : return all room ID
+    * Output : list of IDs of every single room (only the one with Smarther thermostat)
+
+  * **getListRoomParam** : return every parameters of a room
+    * Input : room ID
+    * Output : list of parameters of a room
+
+  * **getRoomParam** : return a specific parameter for a specific room
+    * Input : room ID and parameter
+    * Output : value
+
+  * **getModulesId** : return all module IDs
+    * Output : list of IDs of every single module (socket, cable outlet, ...)
+
+  * **getListModuleParam** : return every parameters of a module
+    * Input : module ID
+    * Output : list of parameters of a module
+
+  * **getModuleParam** : return a specific parameter for a specific module
+    * Input : module ID and parameter
+    * Output : value
 
 
+#### 4-7 Utilities functions ####
+
+
+  * **rawAPI** (authentication, APIkeyword, parameters) : Direct call an APIkeyword from Netatmo and return a dictionary with the raw response the APIkeywork is the path without the / before as specified in the documentation (eg. "gethomesdata" or "homestatus")
   * **toTimeString** (timestamp) : Convert a Netatmo time stamp to a readable date/time format.
   * **toEpoch**( dateString) : Convert a date string (form YYYY-MM-DD_HH:MM:SS) to timestamp
   * **todayStamps**() : Return a couple of epoch time (start, end) for the current day
 
 
-#### 4-6 All-in-One function ####
+#### 4-8 All-in-One function ####
 
 
 If you just need the current temperature and humidity reported by a sensor with associated min and max values on the last 24 hours, you can get it all with only one call that handle all required steps including authentication :
